@@ -49,7 +49,7 @@ password = "sua_senha"
 ### 4. Executando o Dashboard
 No terminal, execute o comando:
 ``` bash
-streamlit run dashboard.py
+streamlit run dashboard\dashboard.py
 ```
 
 O painel abrirá automaticamente no seu navegador padrão (geralmente em http://localhost:8501).
