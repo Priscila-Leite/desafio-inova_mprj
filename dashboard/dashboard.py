@@ -3,9 +3,9 @@ import psycopg2
 import pandas as pd
 import plotly.express as px
 
-st.set_page_config(page_title='Análise exploratória - Inova_MPRJ', layout='wide')
+st.set_page_config(page_title='Insights e Inconsistências na Execução da Despesa - Inova_MPRJ', layout='wide')
 
-st.title('Principais insights de irregularidades no dados')
+st.title('Insights e inconsistências na execução da despesa pública')
 
 @st.cache_data(ttl=600)
 
@@ -23,12 +23,16 @@ def load_data():
 
         # Total de pagamentos sem empenho
         q_no_empenho = """
-        select count(*) 
-        from pagamento p 
-        left join empenho e on p.id_empenho = e.id_empenho 
+        select p.id_pagamento,
+            p.id_empenho id_empenho_inexistente,
+            p.valor
+        from pagamento p
+        left join empenho e
+            on p.id_empenho = e.id_empenho
         where e.id_empenho is null;
         """
-        count_no_empenho = pd.read_sql(q_no_empenho, conn).iloc[0,0]
+        df_no_empenho = pd.read_sql(q_no_empenho, conn)
+        count_no_empenho = len(df_no_empenho)
 
         # CNPJs inválidos
         q_cnpj_forn = """
@@ -76,13 +80,13 @@ def load_data():
             from liquidacao_nota_fiscal
             group by id_empenho
         ), res_pagamento as (
-            select id_empenho, sum(valor) as total_pago
+            select id_empenho, sum(valor) total_pago
             from pagamento
             group by id_empenho
         ) select e.id_empenho,
-            coalesce(l.total_liquidado, 0) as total_liquidado,
-            coalesce(p.total_pago, 0) as total_pago,
-            (coalesce(p.total_pago, 0) - coalesce(l.total_liquidado, 0)) as diferenca
+            coalesce(l.total_liquidado, 0) total_liquidado,
+            coalesce(p.total_pago, 0) total_pago,
+            (coalesce(p.total_pago, 0) - coalesce(l.total_liquidado, 0)) diferenca
         from empenho e
         left join res_liquidacao l on e.id_empenho = l.id_empenho
         left join res_pagamento p on e.id_empenho = p.id_empenho
@@ -107,17 +111,14 @@ def load_data():
         df_cron_liq = pd.read_sql(q_cron_liq, conn)
         
         conn.close()
-        return count_no_empenho, count_cnpj, df_contratos, df_cnpjs, df_pag_liq, df_cron_pag, df_cron_liq
+        return count_no_empenho, count_cnpj, df_contratos, df_cnpjs, df_pag_liq, df_cron_pag, df_cron_liq, df_no_empenho
 
     except Exception as e:
         st.error(f'Erro na conexão: {e}')
         return 0, 0, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-# Carrega Dados
-qtd_sem_empenho, qtd_cnpj_invalido, df_contratos_irreg, df_cnpjs_invalidos, df_pag_liq, df_cron_pag, df_cron_liq = load_data()
+qtd_sem_empenho, qtd_cnpj_invalido, df_contratos_irreg, df_cnpjs_invalidos, df_pag_liq, df_cron_pag, df_cron_liq, df_no_empenho = load_data()
 
-
-# Resumo
 st.header('Resumo das Principais Irregularidades')
 st.markdown('Quantidade de registros inconsistentes por categoria de análise:')
 
@@ -150,9 +151,10 @@ with col4:
         len(df_pag_liq),
         help="Empenhos onde valor pago é maior que o liquidado"
     )
+
 with col5:
     st.metric(
-        "Erro Cronológico",
+        "Erros Cronológicos",
         len(df_cron_pag) + len(df_cron_liq),
         help="Pagamento ou Liquidação antes do Empenho")
 
@@ -160,9 +162,67 @@ st.divider()
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["Pagamentos sem empenho", "Pagamentos Excedentes", "CNPJs inválidos", "Pagamento > Liquidação", "Erro cronológico"])
 
+with tab1:
+    st.warning(f"**{qtd_sem_empenho}** Pagamentos sem empenho")
+    if not df_no_empenho.empty:
+        st.dataframe(
+            df_no_empenho,
+            hide_index=True,
+            use_container_width=True,
+        )
+
 with tab2:
-    st.subheader('Contratos com Pagamentos Excedentes')
+    st.subheader('Contratos com pagamentos excedentes')
     if not df_contratos_irreg.empty:
+        df_pag_liq['porcentagem_excesso'] = df_pag_liq.apply(
+            lambda x: (x['diferenca'] / x['total_liquidado'] * 100) if x['total_liquidado'] > 0 else 100.0, 
+            axis=1
+        )
+
+        fig = px.scatter(
+            df_pag_liq,
+            x='total_liquidado',
+            y='porcentagem_excesso',
+            size='diferenca', 
+            color='porcentagem_excesso',
+            color_continuous_scale='Reds',
+            hover_name='id_empenho',
+            hover_data={
+                'id_empenho': False,
+                'total_liquidado': ':,.2f',
+                'porcentagem_excesso': ':.2f', 
+                'diferenca': ':,.2f'
+            },
+            title='Porcentagem de pagamento excedido por empenho (Pago > Liquidado)',
+            labels={
+                'total_liquidado': 'Valor liquidado (R$)',
+                'porcentagem_excesso': 'Porcentagem excedida (%)',
+                'diferenca': 'Excesso em reais (R$)',
+            }
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.dataframe(
+                df_pag_liq.sort_values(by='porcentagem_excesso', ascending=False),
+                hide_index=True
+            )
+    else:
+        st.success("Nenhum contrato irregular encontrado.")
+
+with tab3:
+    st.warning(f"**{qtd_cnpj_invalido}** CNPJs inválidos")
+    if not df_cnpjs_invalidos.empty:
+        st.dataframe(
+            df_cnpjs_invalidos,
+            hide_index=True,
+            use_container_width=True
+        )
+
+with tab4:
+    st.subheader('Valor pago maior que valor liquidado')
+        
+    if not df_pag_liq.empty:
+  
         df_contratos_irreg['excesso_reais'] = df_contratos_irreg['valor_pago'] - df_contratos_irreg['valor_contratado']
         fig = px.scatter(df_contratos_irreg,
         x='valor_contratado',
@@ -186,45 +246,12 @@ with tab2:
         )
         st.plotly_chart(fig, use_container_width=True)
         
-        with st.expander('Ver lista de contratos irregulares'):
-            st.dataframe(
+        st.dataframe(
                 df_contratos_irreg.sort_values(by='porcentagem_excesso', ascending=False),
                 hide_index=True
             )
     else:
-        st.success("Nenhum contrato irregular encontrado.")
-
-
-with tab3:
-    st.warning(f"**{qtd_cnpj_invalido}** CNPJs inválidos")
-    if not df_cnpjs_invalidos.empty:
-        st.dataframe(
-            df_cnpjs_invalidos,
-            hide_index=True,
-            use_container_width=True
-        )
-
-with tab4:
-    st.subheader('Valor Pago > Valor Liquidado')
-        
-    if not df_pag_liq.empty:
-        col_l, col_r = st.columns([2, 1])
-        with col_l:
-            fig_bar = px.bar(
-                df_pag_liq.head(20), # Top 20 para não poluir
-                x='id_empenho',
-                y=['total_liquidado', 'total_pago'],
-                barmode='group',
-                title='Top 20 Empenhos com Diferença (Pago vs Liquidado)',
-                labels={'value': 'Valor (R$)', 'variable': 'Etapa'}
-            )
-            st.plotly_chart(fig_bar, use_container_width=True)
-        
-        with col_r:
-            st.metric("Total da Diferença", f"R$ {df_pag_liq['diferenca'].sum():,.2f}")
-            st.dataframe(df_pag_liq[['id_empenho', 'diferenca']].sort_values(by='diferenca', ascending=False), hide_index=True)
-    else:
-        st.success("Nenhum caso de Pagamento > Liquidado encontrado.")
+        st.success("Nenhum caso onde o valor do pagamento seja maior que o valor Liquidado encontrado.")
 
 with tab5:
     st.subheader('Pagamentos/Liquidações feitas antes do empenho')

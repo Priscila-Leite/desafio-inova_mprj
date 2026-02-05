@@ -1,0 +1,224 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazilian]{babel}
+\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{graphicx}
+\usepackage[margin=1.5cm]{geometry}
+\usepackage{listings}
+\usepackage{xcolor} % Para cores
+
+% Configuração básica do SQL no listings
+\lstset{
+    language=SQL,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red},
+    commentstyle=\color{gray},
+    numbers=left,
+    numberstyle=\tiny,
+    frame=single,
+    breaklines=true
+}
+\usepackage{indentfirst}
+
+\title{Relatório técnico}
+\author{Priscila Leite dos Santos Silva}
+\date{}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Modelagem de dados}
+
+    A modelagem desenvolvida preservou a estrutura de dados do dicionário de entidades. Como o sistema deve ser capaz de identificar inconsistências e indícios de irregularidades, optou-se por fazer um diagrama mostrando fluxo ideal de dados, que não permite a inserção de registros de irregularidades e serve apenas para visualização da origem das informações e um onde não se utiliza chaves estrangeiras para garantir a integridade dos dados. Essa estraégia permite que o banco de dados apenas armazene as informações, possibilitando que a verificação da legalidade dos dados será feita em análises posteriores à inserção.\\
+    
+    
+    Abaixo, seguem os diagramas relacionais do modelo ideal, que representa como o sistema funciona quando não há problemas com os dados, e do modelo real, que permite a inserção de anomalias e irregularidades.
+    
+    \begin{figure}[!ht]
+        \centering
+        \includegraphics[width=\textwidth]{modelo_ideal.png}
+        \caption{Modelo ideal, representando o fluxo de dados legal e sem exceções}
+        \label{fig:fluxo_ideal}
+    \end{figure}
+
+    \begin{figure}[!ht]
+        \centering
+        \includegraphics[width=\textwidth]{modelo_real.png}
+        \caption{Modelo real, que permite a inserção de dados de irregularidades e exceções}
+        \label{fig:fluxo_real}
+    \end{figure}
+
+
+\newpage
+    
+    \paragraph{Descrição das cardinalidades do modelo ideal:}
+    \begin{itemize}
+        \item \textbf{Entidade $\rightarrow$ Contrato (1:N):} Uma entidade pode firmar diversos contratos, mas cada contrato pertence a uma única entidade.
+        \item \textbf{Fornecedor $\rightarrow$ Contrato (1:N):} Um fornecedor pode ter múltiplos contratos com o órgão público.
+        \item \textbf{Contrato $\rightarrow$ Empenho (1:N):} Um contrato pode gerar múltiplas notas de empenho (ex: empenhos mensais), mas cada empenho está vinculado a um único contrato.
+        \item \textbf{Empenho $\rightarrow$ Liquidação (1:N):} O valor empenhado pode ser liquidado de forma parcelada, gerando vários registros de liquidação para um mesmo empenho.
+        \item \textbf{Empenho $\rightarrow$ Pagamento (1:N):} O pagamento pode ocorrer em parcelas, havendo múltiplos pagamentos vinculados a uma única nota de empenho.
+        \item \textbf{Fornecedor $\rightarrow$ Empenho (1:N):} Um mesmo fornecedor (identificado pelo CPF/CNPJ do credor) pode ser beneficiário de múltiplos empenhos.
+        \item \textbf{Entidade $\rightarrow$ Empenho (1:N):} Uma entidade é responsável pela emissão de diversos empenhos.
+        \item \textbf{Fornecedor $\rightarrow$ NFe (1:N):} Um fornecedor emite diversas notas fiscais.
+        \item \textbf{NFe $\rightarrow$ Liquidação (1:1):} Cada registro de liquidação está vinculado a uma única Nota Fiscal Eletrônica (através da chave DANFE) para validação da despesa.
+        \item \textbf{NFe $\rightarrow$ NFe Pagamento (1:1):} Cada nota fiscal possui um registro detalhando o meio e o valor do pagamento associado.
+
+    \end{itemize}
+    
+\section{Investigação de anomalias}
+
+    As perguntas de investigação foram criadas, principalmente, a partir da Lei 4.320/1964.
+
+\subsection{Há pagamentos sem empenhos correspondentes?}
+
+\noindent
+\begin{minipage}{\linewidth}
+    \begin{lstlisting}
+        select p.id_pagamento,
+            p.id_empenho id_empenho_inexistente,
+            p.valor
+        from pagamento p
+        left join empenho e
+            on p.id_empenho = e.id_empenho
+        where e.id_empenho is null;
+    \end{lstlisting}
+\end{minipage}
+
+    Como no banco de dados disponibilizado há chave estrangeira ligando "empenho" e "pagamento", essa consulta não retornou nenhum registro.
+
+\subsection{Existem contratos com pagamentos acima do valor total contratado?}
+
+\noindent
+\begin{minipage}{\linewidth}
+    \begin{lstlisting}
+        select c.id_contrato,
+        	c.valor valor_contrato,
+        	coalesce(sum(p.valor), 0) total_pago,
+            round(((sum(p.valor)-c.valor)/nullif(c.valor,0))*100, 2) porcentagem_excesso
+        from contrato c
+        left join empenho e
+        	on e.id_contrato = c.id_contrato
+        left join pagamento p
+        	on p.id_empenho = e.id_empenho 
+        group by c.id_contrato, c.valor
+        having coalesce(sum(p.valor), 0) > c.valor;
+    \end{lstlisting}
+\end{minipage}
+
+    Essa consulta retornou 255 registros de contratos cujo valor pago excede o valor contratado, o que é um alerta para uma possível irregularidade.
+
+\subsection{Existem contratos/empenhos cuja entidade não exista?}
+
+\begin{minipage}{\linewidth}
+    \begin{lstlisting}
+        	-- Verifica entidades
+        select c.id_contrato,
+        	c.id_entidade
+        from contrato c
+        left join entidade e 
+        	on c.id_entidade = e.id_entidade
+        where e.id_entidade is null;
+        
+        	-- Verifica fornecedores
+        select c.id_contrato,
+        	c.id_fornecedor
+        from contrato c
+        left join fornecedor f 
+        	on c.id_fornecedor = f.id_fornecedor 
+        where f.id_fornecedor is null;
+    \end{lstlisting}
+\end{minipage}
+
+    Essas duas consultas não retornaram nenhum registro, ou seja, até o momento não existem contratos com entidades ou fornecedores potencialmente falsos.
+
+\subsection{Existem fornecedores/entidades com documento (CNPJ) estruturalmente incorreto?}
+
+\begin{minipage}{\linewidth}
+    \begin{lstlisting}
+        select id_fornecedor,
+        	nome,
+        	documento CNPJ
+        from fornecedor
+        where length(replace(replace(replace(trim(documento), '.', ''), '/', ''), '-', '')) != 14;
+        
+        	-- verifica entidades
+        select id_entidade,
+        	nome,
+        	cnpj CNPJ
+        from entidade
+        where length(replace(replace(replace(trim(cnpj), '.', ''), '/', ''), '-', '')) != 14;
+    \end{lstlisting}
+\end{minipage}
+
+        Essas consultas mostraram que, até o momento, existem 3 fornecedores com CNPJ inválido e nenhuma entidade com CNPJ inválido.
+
+\subsection{Existem empenhos onde o valor pago é maior que o liquidado?}
+
+\noindent
+\begin{minipage}{\linewidth}
+    \begin{lstlisting}
+        with res_liquidacao as (
+        	select id_empenho, sum(valor) total_liquidado
+        	from liquidacao_nota_fiscal
+        	group by id_empenho
+        ), res_pagamento as (
+        	select id_empenho, sum(valor) as total_pago
+        	from pagamento
+        	group by id_empenho
+        ) select e.id_empenho,
+        	coalesce(l.total_liquidado, 0) total_liquidado,
+        	coalesce(p.total_pago, 0) total_pago
+        from empenho e
+        left join res_liquidacao l
+        	on e.id_empenho = l.id_empenho
+        left join res_pagamento p
+        	on e.id_empenho = p.id_empenho
+        where coalesce(p.total_pago, 0) > coalesce(l.total_liquidado, 0);
+    \end{lstlisting}
+\end{minipage}
+
+    Essa consulta retornou 40 registros de empenhos cujo valor total pago é maior que o valor liquidado.
+
+\subsection{Existem pagamentos com data anterior ao empenho?}
+
+\noindent
+\begin{minipage}{\linewidth}
+    \begin{lstlisting}
+        select e.id_empenho,
+        	p.id_pagamento,
+        	p.datapagamentoempenho,
+        	e.data_empenho
+        from pagamento p
+        left join empenho e
+        	on e.id_empenho = p.id_empenho
+        where e.data_empenho > p.datapagamentoempenho;
+    \end{lstlisting}
+\end{minipage}
+
+    Essa consulta retornou 41 registros onde essa irregularidade ocorre.
+
+\subsection{Existem liquidações com data anterior ao empenho?}
+
+\noindent
+\begin{minipage}{\linewidth}
+    \begin{lstlisting}
+        select e.id_empenho,
+        	lnf.id_liquidacao_empenhonotafiscal,
+        	lnf.data_emissao,
+        	e.data_empenho
+        from liquidacao_nota_fiscal lnf
+        join empenho e
+        	on e.id_empenho = lnf.id_empenho
+        where e.data_empenho > lnf.data_emissao;
+    \end{lstlisting}
+\end{minipage}
+
+    Essa consulta não retornou nenhum registro, logo esse tipo de irregularidade não está registrada no sistema.
+    
+\end{document}

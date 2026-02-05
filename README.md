@@ -1,1 +1,29 @@
-# desafio-inova_mprj
+# Desafio Técnico - Inova MPRJ (Dados & Analytics)
+
+Este repositório contém a solução desenvolvida para o Desafio Técnico do Processo Seletivo para Estágio em Dados & Analytics do **Inova MPRJ**.
+
+O projeto consiste na estruturação, análise e visualização de dados referentes ao fluxo da despesa pública (Empenho, Liquidação e Pagamento), com foco na identificação de inconsistências, anomalias e possíveis indícios de irregularidades, conforme a Lei 4.320/64.
+
+---
+
+## 📂 Estrutura do Repositório
+
+* `dashboard`: Código fonte do painel interativo desenvolvido em Python (Streamlit).
+* `dashboard/requirements.txt`: Lista de dependências necessárias para execução do projeto.
+* `sql`: Contém o arquivo sql com as queries SQL utilizadas para investigação e validação das hipóteses.
+* `relatorio.pdf`: Contém o documento detalhando a modelagem de dados, metodologia e conclusões da análise em pdt e tex. Também contém as imagens do modelos relacionais.
+
+---
+
+## 🚀 Como Executar o Projeto
+
+Para visualizar o dashboard localmente, siga os passos abaixo:
+
+### 1. Pré-requisitos
+Certifique-se de ter o **Python 3.8+** instalado.
+
+### 2. Instalação das Dependências
+Clone este repositório e instale as bibliotecas necessárias utilizando o arquivo `requirements.txt` na pasta `dashboard`:
+
+```bash
+pip install -r dashboard\requirements.txt
