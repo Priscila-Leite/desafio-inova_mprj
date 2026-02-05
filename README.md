@@ -4,6 +4,9 @@ Este repositório contém a solução desenvolvida para o Desafio Técnico do Pr
 
 O projeto consiste na estruturação, análise e visualização de dados referentes ao fluxo da despesa pública (Empenho, Liquidação e Pagamento), com foco na identificação de inconsistências, anomalias e possíveis indícios de irregularidades, conforme a Lei 4.320/64.
 
+**Acesse o dashboard online:**
+https://desafio-inovamprj-priscila-leite.streamlit.app/
+
 ---
 
 ## 📂 Estrutura do Repositório
