@@ -27,3 +27,29 @@ Clone este repositório e instale as bibliotecas necessárias utilizando o arqui
 
 ```bash
 pip install -r dashboard\requirements.txt
+```
+### 3. Configuração de Acesso ao Banco de Dados
+O projeto conecta-se diretamente ao banco de dados PostgreSQL fornecido no desafio. Por questões de segurança, as credenciais **não** estão expostas no código.
+
+Você deve configurar as credenciais localmente:
+
+1.  Na raiz do projeto, crie uma pasta chamada `.streamlit`.
+2.  Dentro dela, crie um arquivo chamado `secrets.toml`.
+3.  Insira as credenciais de acesso (enviadas por e-mail no edital) no seguinte formato:
+
+```toml
+[postgres]
+host = "host_do_banco"
+port = "5432"
+dbname = "nome_do_banco"
+user = "seu_usuario"
+password = "sua_senha"
+```
+
+### 4. Executando o Dashboard
+No terminal, execute o comando:
+``` bash
+streamlit run dashboard.py
+```
+
+O painel abrirá automaticamente no seu navegador padrão (geralmente em http://localhost:8501).
